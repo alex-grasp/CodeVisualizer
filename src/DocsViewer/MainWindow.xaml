@@ -1,0 +1,537 @@
+<Window x:Class="DocsViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:DocsViewer.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel, IsDesignTimeCreatable=False}"
+        Title="DocsViewer" Width="1400" Height="860" MinWidth="1000" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackgroundBrush}"
+        FontFamily="Segoe UI" FontSize="13"
+        TextElement.Foreground="{StaticResource TextBrush}"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+
+    <Window.InputBindings>
+        <KeyBinding Key="F" Modifiers="Control" Command="{Binding FocusSearchCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenFolderCommand}" />
+        <KeyBinding Key="F5" Command="{Binding ReloadCommand}" />
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ===== Toolbar ===== -->
+        <Border Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
+                    <Border Width="30" Height="30" CornerRadius="8" Background="{StaticResource AccentBrush}">
+                        <TextBlock Text="&#xE8A1;" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="DocsViewer" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Background="{StaticResource WindowBackgroundBrush}" CornerRadius="6" Padding="10,6" MaxWidth="560" ToolTip="{Binding FolderDisplay}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding FolderDisplay}" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Button Content="Open folder" Command="{Binding OpenFolderCommand}" Margin="8,0,0,0" ToolTip="Choose a folder with plumbing docs (Ctrl+O)" />
+                    <Button Content="Reload" Command="{Binding ReloadCommand}" Margin="8,0,0,0" ToolTip="Re-read every document (F5)" />
+                    <Border Background="{StaticResource WindowBackgroundBrush}" CornerRadius="6" Padding="10,6" MaxWidth="260" Margin="16,0,0,0"
+                            ToolTip="{Binding SourceRootToolTip}" Visibility="{Binding HasFolder, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE943;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding SourceRootDisplay}" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Button Content="Source root…" Command="{Binding ChooseSourceRootCommand}" Margin="8,0,0,0"
+                            ToolTip="Choose the repository folder the paths in the docs are relative to; cards can then open their source files"
+                            Visibility="{Binding HasFolder, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource MutedText}" VerticalAlignment="Center" Margin="14,0,0,0"
+                               Visibility="{Binding StatusText, Converter={StaticResource EmptyToVisibility}}" />
+                </StackPanel>
+
+                <Grid Grid.Column="2" Width="360" VerticalAlignment="Center">
+                    <TextBox x:Name="SearchBox" Style="{StaticResource SearchTextBox}" Tag="Search this document"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding HasGraph}"
+                             PreviewKeyDown="SearchBox_PreviewKeyDown" GotKeyboardFocus="SearchBox_GotKeyboardFocus" />
+                    <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="6"
+                           IsOpen="{Binding IsSearchOpen, Mode=TwoWay}" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                           Width="{Binding ActualWidth, ElementName=SearchBox}">
+                        <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8"
+                                Padding="4" Margin="8,0,8,12" MaxHeight="440">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.16" Color="#000000" Direction="270" />
+                            </Border.Effect>
+                            <Grid>
+                                <ListBox x:Name="SearchResultsList" ItemsSource="{Binding SearchResults}" SelectedItem="{Binding SelectedSearchResult}"
+                                         Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource SearchResultItem}"
+                                         PreviewKeyDown="SearchResults_PreviewKeyDown" PreviewMouseLeftButtonUp="SearchResults_PreviewMouseLeftButtonUp"
+                                         Visibility="{Binding HasSearchResults, Converter={StaticResource BoolToVisibility}}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:SearchResultViewModel}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource KindBadge}" VerticalAlignment="Top" Margin="0,2,8,0" />
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                                               Visibility="{Binding Subtitle, Converter={StaticResource EmptyToVisibility}}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBlock Text="No matches in this document" Style="{StaticResource MutedText}" Margin="10,10" HorizontalAlignment="Center"
+                                           Visibility="{Binding HasSearchResults, Converter={StaticResource InverseBoolToVisibility}}" />
+                            </Grid>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ===== Body ===== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="252" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="372" MinWidth="300" MaxWidth="560" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left pane -->
+            <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Margin="16,16,16,8">
+                        <TextBlock Text="DOCUMENTS" Style="{StaticResource PaneHeader}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Documents.Count}" Style="{StaticResource MutedText}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid Grid.Row="1">
+                        <ListBox ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}" Style="{StaticResource PlainListBox}"
+                                 ItemContainerStyle="{StaticResource DocListItem}" IsSynchronizedWithCurrentItem="False">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:DocumentItemViewModel}">
+                                    <Grid Margin="{Binding Indent}" ToolTip="{Binding ToolTipText}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="&#x2514;" Foreground="{StaticResource FaintBrush}" FontSize="12" Margin="0,1,6,0" VerticalAlignment="Top"
+                                                   Visibility="{Binding IsChild, Converter={StaticResource BoolToVisibility}}" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding FileName}" Style="{StaticResource MutedText}" FontSize="11.5" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="No documents" Style="{StaticResource MutedText}" Margin="16,8" Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+
+                    <TextBlock Grid.Row="2" Text="{Binding ErrorsText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,16,8"
+                               ToolTip="{Binding ErrorsText}" Visibility="{Binding HasErrors, Converter={StaticResource BoolToVisibility}}" />
+
+                    <Border Grid.Row="3" Margin="12,8,12,12" Background="{StaticResource WindowBackgroundBrush}" CornerRadius="8" Padding="2">
+                        <UniformGrid Columns="3">
+                            <RadioButton Content="Flows" Style="{StaticResource SegmentRadio}" IsChecked="{Binding IsFlowsMode, Mode=TwoWay}" GroupName="Mode" ToolTip="Entry points: where a flow starts" />
+                            <RadioButton Content="Components" Style="{StaticResource SegmentRadio}" IsChecked="{Binding IsComponentsMode, Mode=TwoWay}" GroupName="Mode" ToolTip="Files and types grouped by kind" />
+                            <RadioButton Content="Sections" Style="{StaticResource SegmentRadio}" IsChecked="{Binding IsSectionsMode, Mode=TwoWay}" GroupName="Mode" ToolTip="The document's headings" />
+                        </UniformGrid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Center: breadcrumb + columns -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Padding="18,10,18,2" MinHeight="44">
+                    <StackPanel VerticalAlignment="Center">
+                        <ItemsControl ItemsSource="{Binding Breadcrumb}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:BreadcrumbItemViewModel}">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="&#x203A;" Foreground="{StaticResource FaintBrush}" FontSize="15" Margin="4,-2,4,0" VerticalAlignment="Center"
+                                                   Visibility="{Binding IsFirst, Converter={StaticResource InverseBoolToVisibility}}" />
+                                        <Button Content="{Binding Title}" Command="{Binding Command}" CommandParameter="{Binding}" ToolTip="{Binding Title}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource CrumbButton}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Parent / child / referenced documents of the selected one -->
+                        <ItemsControl ItemsSource="{Binding RelatedDocs}" Margin="6,2,0,4"
+                                      Visibility="{Binding HasRelatedDocs, Converter={StaticResource BoolToVisibility}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:RelatedDocViewModel}">
+                                    <Button Command="{Binding OpenCommand}" CommandParameter="{Binding}" ToolTip="{Binding ToolTip}" Margin="0,0,6,4" Padding="0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand">
+                                        <Border Background="{StaticResource ChipBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="8,2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Relation}" Style="{StaticResource MutedText}" FontSize="11" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Title}" FontSize="11.5" Foreground="{StaticResource AccentBrush}" Margin="5,0,0,0" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer x:Name="ColumnsScroller" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Padding="12,4,12,6" Focusable="False" PanningMode="HorizontalOnly">
+                    <ItemsControl x:Name="ColumnsHost" ItemsSource="{Binding Columns}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ColumnViewModel}">
+                                <Grid Width="276" Margin="0,0,8,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <Grid Margin="6,0,6,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Header}" FontWeight="SemiBold" FontSize="12.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding Header}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding CountText}" Style="{StaticResource MutedText}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <ListBox Grid.Row="1" ItemsSource="{Binding View}" SelectedItem="{Binding SelectedCard, Mode=TwoWay}"
+                                             Style="{StaticResource ColumnListBox}" ItemContainerStyle="{StaticResource CardItem}"
+                                             PreviewKeyDown="ColumnList_PreviewKeyDown" SelectionChanged="ColumnList_SelectionChanged"
+                                             Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
+                                        <ListBox.GroupStyle>
+                                            <GroupStyle>
+                                                <GroupStyle.HeaderTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Name}" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                                                   Margin="8,6,0,6" Visibility="{Binding Name, Converter={StaticResource EmptyToVisibility}}" />
+                                                    </DataTemplate>
+                                                </GroupStyle.HeaderTemplate>
+                                            </GroupStyle>
+                                        </ListBox.GroupStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:CardViewModel}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                                            <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource KindBadge}" />
+                                                            <Border Background="{StaticResource ChipBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10"
+                                                                    Padding="7,1" Margin="6,0,0,0" MaxWidth="150" VerticalAlignment="Center"
+                                                                    Visibility="{Binding EdgeLabel, Converter={StaticResource EmptyToVisibility}}">
+                                                                <TextBlock Text="{Binding EdgeLabel}" FontSize="10" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding EdgeLabel}" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" ToolTip="{Binding Title}" />
+                                                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedText}" FontSize="11.5" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"
+                                                                   ToolTip="{Binding Subtitle}" Visibility="{Binding Subtitle, Converter={StaticResource EmptyToVisibility}}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                                Visibility="{Binding HasChildren, Converter={StaticResource BoolToVisibility}}">
+                                                        <Border Background="{StaticResource ChipBrush}" CornerRadius="9" MinWidth="18" Height="18" Padding="5,0">
+                                                            <TextBlock Text="{Binding ChildCount}" FontSize="10.5" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <TextBlock Text="&#x203A;" Foreground="{StaticResource FaintBrush}" FontSize="18" Margin="5,-3,0,0" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                    <Border Grid.Row="1" Margin="6,0,6,8" Padding="14" VerticalAlignment="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}"
+                                            BorderThickness="1" CornerRadius="8" Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="{Binding EmptyText}" Style="{StaticResource MutedText}" TextWrapping="Wrap" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Empty state -->
+                <Grid Grid.Row="0" Grid.RowSpan="2" Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVisibility}}" Background="{StaticResource WindowBackgroundBrush}">
+                    <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="12" Padding="36,32"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+                        <StackPanel>
+                            <Border Width="56" Height="56" CornerRadius="14" Background="{StaticResource AccentSoftBrush}" HorizontalAlignment="Center">
+                                <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="26" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="{Binding EmptyStateTitle}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,18,0,8" />
+                            <TextBlock Text="{Binding EmptyStateHint}" Style="{StaticResource MutedText}" FontSize="13" TextWrapping="Wrap" TextAlignment="Center" LineHeight="20" />
+                            <Button Content="Open folder" Style="{StaticResource PrimaryButton}" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Center" Margin="0,22,0,0" Padding="18,8" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <GridSplitter Grid.Column="2" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="Transparent" ShowsPreview="False" Focusable="False" />
+
+            <!-- Details pane -->
+            <Border Grid.Column="3" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1,0,0,0">
+                <Grid>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="32" Visibility="{Binding HasDetails, Converter={StaticResource InverseBoolToVisibility}}">
+                        <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="28" Foreground="{StaticResource FaintBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="Select a card to see its details" Style="{StaticResource MutedText}" FontSize="13" Margin="0,12,0,0" HorizontalAlignment="Center" />
+                        <TextBlock Text="Use Up/Down to move, Right or Enter to drill in, Left to go back." Style="{StaticResource MutedText}" FontSize="11.5"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,6,0,0" />
+                    </StackPanel>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18,16,14,18" Visibility="{Binding HasDetails, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel DataContext="{Binding Details}" d:DataContext="{d:DesignInstance Type=vm:DetailsViewModel}">
+                            <StackPanel Orientation="Horizontal">
+                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource KindBadge}" />
+                                <Button Style="{StaticResource LinkButton}" Content="{Binding SectionTitle}" Command="{Binding NavigateSectionCommand}" FontSize="11.5"
+                                        Foreground="{StaticResource MutedBrush}" Margin="10,0,0,0" ToolTip="Open this section"
+                                        Visibility="{Binding HasSection, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="22" Margin="0,10,0,0" />
+                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedText}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"
+                                       Visibility="{Binding Subtitle, Converter={StaticResource EmptyToVisibility}}" />
+
+                            <!-- Owner -->
+                            <Grid Margin="0,12,0,0" Visibility="{Binding HasOwner, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="56" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Owner" Style="{StaticResource MutedText}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Style="{StaticResource LinkButton}" Content="{Binding OwnerTitle}" Command="{Binding NavigateOwnerCommand}" ToolTip="Go to the owning type or file" />
+                            </Grid>
+
+                            <!-- Path -->
+                            <Grid Margin="0,8,0,0" Visibility="{Binding HasPath, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Background="{StaticResource CodeBackgroundBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="8,5">
+                                    <TextBlock Text="{Binding Path}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" VerticalAlignment="Center" />
+                                </Border>
+                                <Button Grid.Column="1" Style="{StaticResource SmallButton}" Content="Copy" Command="{Binding CopyPathCommand}" Margin="6,0,0,0" ToolTip="Copy the path to the clipboard" />
+                            </Grid>
+                            <TextBlock Text="Path inherited from the owner" Style="{StaticResource MutedText}" FontSize="11" Margin="0,3,0,0"
+                                       Visibility="{Binding PathIsInherited, Converter={StaticResource BoolToVisibility}}" />
+
+                            <!-- Source file: Open / Reveal when the path resolves under the source root -->
+                            <StackPanel Margin="0,8,0,0" Visibility="{Binding HasPath, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal" Visibility="{Binding HasResolvedPath, Converter={StaticResource BoolToVisibility}}">
+                                    <Button Style="{StaticResource PrimaryButton}" Content="Open file" Command="{Binding OpenFileCommand}" Padding="12,5"
+                                            ToolTip="{Binding ResolvedPath}" />
+                                    <Button Style="{StaticResource SmallButton}" Content="Reveal in Explorer" Command="{Binding RevealFileCommand}" Margin="6,0,0,0"
+                                            ToolTip="Show the file in File Explorer" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ResolvedPath}" Style="{StaticResource MutedText}" FontFamily="{StaticResource MonoFont}" FontSize="10.5"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding ResolvedPath}" Margin="0,4,0,0"
+                                           Visibility="{Binding HasResolvedPath, Converter={StaticResource BoolToVisibility}}" />
+                                <StackPanel Orientation="Horizontal" Visibility="{Binding HasResolvedPath, Converter={StaticResource InverseBoolToVisibility}}">
+                                    <TextBlock Text="{Binding SourceStatus}" Style="{StaticResource MutedText}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220"
+                                               ToolTip="{Binding SourceStatus}" Visibility="{Binding SourceStatus, Converter={StaticResource EmptyToVisibility}}" />
+                                    <Button Style="{StaticResource LinkButton}" Content="Set source root…" Command="{Binding ChooseSourceRootCommand}" FontSize="11.5" Margin="8,0,0,0"
+                                            ToolTip="Choose the repository folder the paths in the docs are relative to"
+                                            Visibility="{Binding ShowChooseSourceRoot, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Button Style="{StaticResource LinkButton}" Content="Show in Components" Command="{Binding ShowInComponentsCommand}" Margin="0,10,0,0" FontSize="12.5"
+                                    Visibility="{Binding IsMethod, Converter={StaticResource BoolToVisibility}}" />
+
+                            <!-- Links to other documents ("see AIPanel-Plumbing.md §3") -->
+                            <StackPanel Visibility="{Binding HasDocLinks, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="OTHER DOCUMENTS" Style="{StaticResource SectionHeader}" />
+                                <ItemsControl ItemsSource="{Binding DocLinks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:DocLinkViewModel}">
+                                            <Button Style="{StaticResource LinkButton}" Content="{Binding Label}" Command="{Binding OpenCommand}" ToolTip="{Binding ToolTip}"
+                                                    Margin="0,0,0,4" FontSize="12.5" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Description -->
+                            <StackPanel Visibility="{Binding HasDescription, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="DESCRIPTION" Style="{StaticResource SectionHeader}" />
+                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" LineHeight="19" />
+                            </StackPanel>
+
+                            <!-- Aliases -->
+                            <StackPanel Visibility="{Binding HasAliases, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="ALSO WRITTEN AS" Style="{StaticResource SectionHeader}" />
+                                <TextBlock Text="{Binding AliasesText}" Style="{StaticResource MutedText}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" TextWrapping="Wrap" LineHeight="18" />
+                            </StackPanel>
+
+                            <!-- Notes -->
+                            <StackPanel Visibility="{Binding HasNotes, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="NOTES" Style="{StaticResource SectionHeader}" />
+                                <ItemsControl ItemsSource="{Binding Notes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="14" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Width="5" Height="5" Fill="{StaticResource FaintBrush}" VerticalAlignment="Top" Margin="0,7,0,0" HorizontalAlignment="Left" />
+                                                <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" LineHeight="19" FontSize="12.5" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Called by -->
+                            <StackPanel Visibility="{Binding HasCalledBy, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="CALLED BY" Style="{StaticResource SectionHeader}" />
+                                <ItemsControl ItemsSource="{Binding CalledBy}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:IncomingEdgeViewModel}">
+                                            <Button Command="{Binding NavigateCommand}" CommandParameter="{Binding Node}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                    Padding="10,7" Margin="0,0,0,6" ToolTip="{Binding Title}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource KindBadge}" Margin="0,0,8,0" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Relation}" Style="{StaticResource MutedText}" FontSize="10.5" VerticalAlignment="Center" Margin="8,0,0,0" MaxWidth="110" TextTrimming="CharacterEllipsis" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Mentioned by -->
+                            <StackPanel Visibility="{Binding HasMentionedBy, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="MENTIONED BY" Style="{StaticResource SectionHeader}" />
+                                <ItemsControl ItemsSource="{Binding MentionedBy}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:IncomingEdgeViewModel}">
+                                            <Button Style="{StaticResource LinkButton}" Content="{Binding Title}" Command="{Binding NavigateCommand}" CommandParameter="{Binding Node}" Margin="0,0,0,4" FontSize="12.5" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Appears in -->
+                            <StackPanel Visibility="{Binding HasSources, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="APPEARS IN" Style="{StaticResource SectionHeader}" />
+                                <ListBox ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}" Style="{StaticResource PlainListBox}"
+                                         ItemContainerStyle="{StaticResource SourceItem}" IsSynchronizedWithCurrentItem="False" MaxHeight="180"
+                                         VirtualizingPanel.IsVirtualizing="False" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:SourceRefViewModel}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding SectionTitle}" FontSize="12.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding LineText}" Style="{StaticResource MutedText}" FontSize="11" Margin="8,0,0,0" FontFamily="{StaticResource MonoFont}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <Border Background="{StaticResource CodeBackgroundBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="0,6" Margin="0,8,0,0"
+                                        Visibility="{Binding HasExcerpt, Converter={StaticResource BoolToVisibility}}">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                        <ItemsControl ItemsSource="{Binding Excerpt}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:ExcerptLineViewModel}">
+                                                    <Border x:Name="Line" Padding="8,1" BorderThickness="3,0,0,0" BorderBrush="Transparent">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="30" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding Number}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource FaintBrush}" TextAlignment="Right" Margin="0,0,8,0" />
+                                                            <TextBlock x:Name="Txt" Grid.Column="1" Text="{Binding Text}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" />
+                                                        </Grid>
+                                                    </Border>
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                                            <Setter TargetName="Line" Property="Background" Value="{StaticResource HighlightLineBrush}" />
+                                                            <Setter TargetName="Line" Property="BorderBrush" Value="{StaticResource HighlightEdgeBrush}" />
+                                                            <Setter TargetName="Txt" Property="FontWeight" Value="SemiBold" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
